@@ -79,7 +79,7 @@ def tokenize(s):
 
 def next_paren(tt):
 	"""function next_paren returns the index of the next top level element of a tokinize range"""
-	o, idx = 0, 0
+	o, idx = 1, 0
 	for idx, s in enumerate(tt):
 		if s == s_open:
 			o += 1
@@ -99,29 +99,35 @@ class ParseError(ValueError):
 
 def parse(l):
 	if isinstance(l, str):
-		tt = []
+		tt = deque()
 		for t in tokenize(l):
 			tt.append(t)
 	else:
 		tt = l
 
-	if tt[0] != s_open:
+	if tt.popleft() != s_open:
 		raise ParseError("expected \"(\", got %s" % tt[0])
 
-	op = tt[1]
+	op = tt.popleft()
 	if op not in execdir:
 		raise ParseError("expected operation, got %s" % tt[1])
 
 	args = []
-	for i in range(2, execdir[tt[1]][1]+2):
-		t = tt[i]
+	for i in range(execdir[op][1]): # number of args
+		t = tt.popleft()
 		if t == s_open:
-			args.append(parse(tt[i:next_paren(tt)]))
-			tt = tt[next_paren(tt[i:])-i:]
+			args.append(parse(tt[:next_paren(tt)]))
+			tt = tt[next_paren(tt[i:])+1:]
 		elif t[0] == "$":
 			args.append(dir_to_set(indirs[int(t[1:])-1]))
 		else:
 			args.append(dir_to_set(t))
+
+	if tt.popleft() != s_close:
+		raise ParseError("no closing parenthese")
+	if len(tt) != 0:
+		raise ParseError("to many arguments")
+
 	return execdir[op][0](*args)
 
 res = parse(sexp)
