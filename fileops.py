@@ -6,6 +6,8 @@ import os.path as path
 # add conditionals later with 'if' and 'in'/'ni'
 helptxt = """usage: %s <out-dir> '<S-exp>' <...in-dirs>
 
+Bug: dir_names may not contain '$', '(' or ')'
+
 All filenames are passed as strings. Relative filenames are allowed.
 An S-expression is build by "(" + <operation> + <...arguments> + ")",
 where arguments can be S-exp themselves.
@@ -14,7 +16,14 @@ The following set operations are defined and their shorhands:
     union                - u (two args)
     intersection         - n (two args)
     difference           - \\ (two args)
-    symmetric_difference - s (two args)""" % (sys.argv[0])
+    symmetric_difference - s (two args)
+	cardinality          - # (one arg)
+	contains             - in (two args)
+	not contains         - ni (two args)
+	if conditional       - if (three args)
+	equals               - eq
+	less                 - lt
+	greater              - gt""" % (sys.argv[0])
 helpflags = ["-h", "--h", "-help", "--help"]
 
 execdir = {
@@ -26,6 +35,8 @@ execdir = {
 	"difference": (frozenset.difference, 2),
 	"s": (frozenset.symmetric_difference, 2),
 	"symmetric_difference": (frozenset.symmetric_difference, 2),
+	"#": ((lambda a: len(a)), 1),
+	"cardinality": ((lambda a: len(a)), 1),
 }
 s_open = "("
 s_close = ")"
@@ -56,16 +67,17 @@ def tokenize(s):
 			yield val[1:]
 			continue
 		if val[-1] == s_close:
-			yield val[:-1]
-			yield s_close
+			yield val.partition(")")[0]
+			for _ in range(len(val) - len(val.partition(")")[0])):
+				yield s_close
 			continue
 		yield val
 	return
 
-def next_paren(str_):
+def next_paren(tt):
 	"""function next_paren returns the index of the next top level element of a tokinize range"""
 	o, idx = 0, 0
-	for idx, s in enumerate(tokenize(str_)):
+	for idx, s in enumerate(tt):
 		if s == s_open:
 			o += 1
 		if s == s_close:
@@ -83,9 +95,13 @@ class ParseError(ValueError):
 	pass
 
 def parse(l):
-	tt = []
-	for t in tokenize(l):
-		tt.append(t)
+	if isinstance(l, str):
+		tt = []
+		for t in tokenize(l):
+			tt.append(t)
+	else:
+		tt = l
+
 	if tt[0] != s_open:
 		raise ParseError("expected \"(\", got %s" % tt[0])
 
@@ -96,8 +112,8 @@ def parse(l):
 	for i in range(2, execdir[tt[1]][1]+2):
 		t = tt[i]
 		if t == s_open:
-			args.append(parse(tt[i:next_paren(tt[i:])]))
-			tt = tt[next_paren(tt[i:])-2 : next_paren(tt[i:])]
+			args.append(parse(tt[i:next_paren(tt)]))
+			tt = tt[next_paren(tt[i:])-i:]
 		elif t[0] == "$":
 			args.append(dir_to_set(indirs[int(t[1:])-1]))
 		else:
