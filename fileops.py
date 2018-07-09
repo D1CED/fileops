@@ -2,6 +2,7 @@
 """Module fileops is a cli tool for set operations on files"""
 import sys, os
 import os.path as path
+from collections import deque
 
 # add conditionals later with 'if' and 'in'/'ni'
 helptxt = """usage: %s <out-dir> '<S-exp>' <...in-dirs>
@@ -56,7 +57,9 @@ except IndexError:
 try:
 	os.mkdir(outdir)
 except FileExistsError:
-	pass
+	in_ = input("directory already present still proceed? [y/N]: ")
+	if in_ != "y":
+		sys.exit(2)
 
 def tokenize(s):
 	"""function tokenize is an iterator over tokens of an s-expression"""
@@ -105,7 +108,8 @@ def parse(l):
 	if tt[0] != s_open:
 		raise ParseError("expected \"(\", got %s" % tt[0])
 
-	if tt[1] not in execdir:
+	op = tt[1]
+	if op not in execdir:
 		raise ParseError("expected operation, got %s" % tt[1])
 
 	args = []
@@ -118,7 +122,7 @@ def parse(l):
 			args.append(dir_to_set(indirs[int(t[1:])-1]))
 		else:
 			args.append(dir_to_set(t))
-	return execdir[tt[1]][0](*args)
+	return execdir[op][0](*args)
 
 res = parse(sexp)
 print(res)
