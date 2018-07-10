@@ -31,12 +31,14 @@ The following set operations are defined and their shorhands:
     less                 - (lt <num> <num>) -> <bool>
     greater              - (gt <num> <num>) -> <bool>
 """, allow_abbrev=False, formatter_class=argparse.RawDescriptionHelpFormatter)
-argp.add_argument("sexp", type=str, help="Lisp-like S-expression for set operations.")
+argp.add_argument("S-exp", type=str, help="Lisp-like S-expression for set operations.")
 argp.add_argument("-f", default=False, dest="force", action='store_true', help="Don't ask for override.")
 argp.add_argument("-o", type=str, dest="outdir", help="If the expression result is a set copy files to <o> directory. (default print to std.out)")
 argp.add_argument('indirs', nargs='*', help="files refernced form sexp with $<n>")
-flags = argp.parse_args()
-[globals()[k] = v for (k, v) in vars(flags).items()]
+for (k, v) in vars(argp.parse_args()).items():
+    if k == "S-exp":
+        k = "sexp"
+    globals()[k] = v
 
 execdir = {
     "u": (frozenset.union, 2),
@@ -55,17 +57,19 @@ execdir = {
 def tokenize(s):
     """function tokenize is an iterator over tokens of an s-expression"""
     s = s.split()
-    for idx, val in enumerate(s):
-        if val[0] == s_open:
+    for val in s:
+        last = 0
+        while val[0] == s_open:
+            val = val[1:]
             yield s_open
-            yield val[1:]
-            continue
-        if val[-1] == s_close:
-            yield val.partition(")")[0]
-            for _ in range(len(val) - len(val.partition(")")[0])):
-                yield s_close
-            continue
-        yield val
+        for char in reversed(val):
+            if char == s_close:
+                val = val[:-1]
+                last += 1
+        if val != "":
+            yield val
+        for _ in range(last):
+            yield s_close
     return
 
 def next_paren(tt) -> int:
@@ -116,13 +120,15 @@ def parse(l):
             for _ in range(next_paren(tt)+1):
                 tt.pop(0)
         elif t[0] == "$":
-            args.append(dir_to_set(flags.indirs[int(t[1:])-1]))
-        elif t[0] in [x for x in range(1, 10)]:
+            args.append(dir_to_set(indirs[int(t[1:])-1]))
+        elif t[0] in [x for x in [str(x) for x in range(1, 10)]]:
             i = int(t)
             if op in ["lt", "eq", "gt"]:
                 args.append(i)
             else:
                 raise ValueError(f"num literal outside context {op}")
+        elif t[0] == s_close:
+            raise ParseError("expected value got ')'")
         else:
             args.append(dir_to_set(t))
 
@@ -138,9 +144,9 @@ res = parse(sexp)
 if outdir and isinstance(res, frozenset):
     try:
         os.mkdir(outdir)
-        [copyfile(x, flags.outdir+x) for x in res]
+        [copyfile(x, outdir+x) for x in res]
     except FileExistsError:
-        if not flags.force:
+        if not force:
             in_ = input("directory already present still proceed? [y/N]: ")
             if in_ != "y":
                 sys.exit(2)
