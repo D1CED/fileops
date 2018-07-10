@@ -36,7 +36,7 @@ argp.add_argument("-f", default=False, dest="force", action='store_true', help="
 argp.add_argument("-o", type=str, dest="outdir", help="If the expression result is a set copy files to <o> directory. (default print to std.out)")
 argp.add_argument('indirs', nargs='*', help="files refernced form sexp with $<n>")
 flags = argp.parse_args()
-print(vars(flags))
+[globals()[k] = v for (k, v) in vars(flags).items()]
 
 execdir = {
     "u": (frozenset.union, 2),
@@ -134,8 +134,8 @@ def parse(l):
     # print(op, args, execdir[op][0](*args))
     return execdir[op][0](*args)
 
-res = parse(flags.sexp)
-if flags.outdir and isinstance(res, frozenset):
+res = parse(sexp)
+if outdir and isinstance(res, frozenset):
     try:
         os.mkdir(outdir)
         [copyfile(x, flags.outdir+x) for x in res]
