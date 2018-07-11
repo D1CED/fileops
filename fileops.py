@@ -4,10 +4,12 @@ import os
 import sys
 import argparse
 from shutil import copyfile
+from contextlib import suppress
 import os.path as path
 
 s_open = "("
 s_close = ")"
+alldirs = dict()
 
 help = """
 Directory names may not contain '$', '(', ')' or start with a number.
@@ -83,7 +85,8 @@ def dir_to_set(dir_):
     dir_ = path.realpath(dir_)
     if dir_[-1] != "/":
         dir_ += "/"
-    return frozenset([x for x in os.listdir(dir_) if path.isfile(dir_ + x)])
+    alldirs.update((x, dir_+x) for x in os.listdir(dir_) if path.isfile(dir_ + x))
+    return frozenset(x for x in os.listdir(dir_) if path.isfile(dir_ + x))
 
 class ParseError(ValueError):
     pass
@@ -106,6 +109,7 @@ def parse(l):
         raise ParseError(f"expected operation, got {op}")
 
     args = []
+    # parse till s_close and count args for better debug
     for _ in range(execdir[op][1]): # number of args
         t = tt.pop(0)
         if t == s_open:
@@ -145,15 +149,17 @@ def main():
 
     res = parse(globals()["S-exp"])
     if outdir and isinstance(res, frozenset):
-        try:
-            raise NotImplementedError()
-            os.mkdir(outdir)
-            [copyfile(x, outdir+x) for x in res]
-        except FileExistsError:
-            if not force:
+        if force:
+            with suppress(FileExistsError): os.mkdir(outdir)
+        else:
+            try:
+                os.mkdir(outdir)
+            except FileExistsError:
                 in_ = input("directory already present still proceed? [y/N]: ")
                 if in_ != "y":
                     sys.exit(2)
+        for x in res:
+            copyfile(alldirs[x], outdir+x)
     else:
         print(res)
 
