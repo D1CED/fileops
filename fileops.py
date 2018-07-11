@@ -3,9 +3,9 @@
 import os
 import sys
 import argparse
+import os.path as path
 from shutil import copyfile
 from contextlib import suppress
-import os.path as path
 
 s_open = "("
 s_close = ")"
@@ -80,6 +80,8 @@ def next_paren(tt) -> int:
 
 def dir_to_set(dir_):
     """returns a set of all filenames of a directory"""
+    if isinstance(dir_, frozenset):
+        return dir_
     if path.isfile(path.realpath(dir_)):
         return set(dir_)
     dir_ = path.realpath(dir_)
@@ -117,22 +119,28 @@ def parse(l):
             for _ in range(next_paren(tt)):
                 tt.pop(0)
         elif t[0] == "$":
-            args.append(dir_to_set(indirs[int(t[1:])-1]))
-        elif t[0] in [str(x) for x in range(1, 10)]:
+            try:
+                args.append(dir_to_set(indirs[int(t[1:])-1]))
+            except IndexError:
+                raise ParseError(f"file {int(t[1:])} not specified")
+        elif t[0] in (str(x) for x in range(1, 10)):
             i = int(t)
             if op in ["lt", "eq", "gt"]:
                 args.append(i)
             else:
-                raise ValueError(f"num literal outside context {op}")
+                raise ParseError(f"num literal outside context {op}")
         elif t[0] == s_close:
-            raise ParseError("expected value got ')'")
+            raise ParseError("expected value got ')', to few arguments")
         else:
             args.append(dir_to_set(t))
 
-    if tt.pop(0) != s_close:
+    try:
+        if tt.pop(0) != s_close:
+            raise ParseError("no closing parenthese or to many arguments")
+    except IndexError:
         raise ParseError("no closing parenthese")
     if len(tt) != 0:
-        raise ParseError("to many arguments")
+        raise ParseError("to many arguments or parenthese")
 
     # print(op, args, execdir[op][0](*args))
     return execdir[op][0](*args)
@@ -147,7 +155,11 @@ def main():
     for (k, v) in vars(argp.parse_args()).items():
         globals()[k] = v
 
-    res = parse(globals()["S-exp"])
+    try:
+        res = parse(globals()["S-exp"])
+    except (ParseError, IndexError, ValueError, TypeError) as e:
+        print("error while parsing S-expression:", e)
+        sys.exit(1)
     if outdir and isinstance(res, frozenset):
         if force:
             with suppress(FileExistsError): os.mkdir(outdir)
