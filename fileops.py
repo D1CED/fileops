@@ -12,7 +12,7 @@ s_close = ")"
 alldirs = dict()
 
 help = """
-Directory names may not contain '$', '(', ')' or start with a number.
+Directory names may not contain '$', '(', ')', ' ' or start with a number.
 All filenames are passed as strings. Relative filenames are allowed.
 An S-expression is build by "(" + <operation> + <...arguments> + ")",
 where arguments can be S-exp themselves.
@@ -35,17 +35,18 @@ The following set operations are defined and their shorhands:
 """
 
 execdir = {
-    "u": (frozenset.union, 2),
-    "n": (frozenset.intersection, 2),
+    # adding new operations is trivial
+    "u":  (frozenset.union, 2),
+    "n":  (frozenset.intersection, 2),
     "\\": (frozenset.difference, 2),
-    "s": (frozenset.symmetric_difference, 2),
-    "#": ((lambda a: len(a)), 1),
-    "in": ((lambda a, b: a.issubset(b)), 2),
-    "d": ((lambda a, b: a.isdisjoint(b)), 2),
-    "eq": ((lambda a, b: a == b), 2),
-    "lt": ((lambda a, b: a < b), 2),
-    "gt": ((lambda a, b: a > b), 2),
-    "if": ((lambda a, b, c: b if a else c), 3),
+    "s":  (frozenset.symmetric_difference, 2),
+    "#":  (lambda a: len(a), 1),
+    "in": (lambda a, b: a.issubset(b), 2),
+    "d":  (lambda a, b: a.isdisjoint(b), 2),
+    "eq": (lambda a, b: a == b, 2),
+    "lt": (lambda a, b: a < b, 2),
+    "gt": (lambda a, b: a > b, 2),
+    "if": (lambda a, b, c: b if a else c, 3),
 }
 
 def tokenize(s):
@@ -80,8 +81,6 @@ def next_paren(tt) -> int:
 
 def dir_to_set(dir_) -> frozenset:
     """returns a set of all filenames of a directory"""
-    if isinstance(dir_, frozenset):
-        return dir_
     if path.isfile(path.realpath(dir_)):
         return set(dir_)
     dir_ = path.realpath(dir_)
@@ -97,17 +96,19 @@ def parse(l):
     """returns the result of a given S-expression"""
     if isinstance(l, str):
         tt = list(tokenize(l))
+    else:
+        tt = list(l)
     if tt == [s_open, s_close]:
         return
 
     try:
         cur = tt.pop(0)
         if cur != s_open:
-            raise ParseError(f"expected \"(\", got {cur}")
+            raise ParseError(f"expected \"(\", got '{cur}'")
 
         op = tt.pop(0)
         if op not in execdir:
-            raise ParseError(f"expected operation, got {op}")
+            raise ParseError(f"expected operation, got '{op}'")
 
         args = []
         t = tt.pop(0)
@@ -122,20 +123,20 @@ def parse(l):
                 except IndexError:
                     raise ParseError(f"file {int(t[1:])} not specified")
                 except ValueError:
-                    raise ParseError(f"error converting {t} to int")
+                    raise ParseError(f"error converting '{t}' to int")
             elif t[0] in (str(x) for x in range(1, 10)):
                 i = int(t)
                 if op in ["lt", "eq", "gt"]:
                     args.append(i)
                 else:
-                    raise ParseError(f"num literal outside context {op}")
+                    raise ParseError(f"num literal outside context '{op}'")
             elif t[0] == s_close:
                 raise ParseError("expected value got ')', to few arguments")
             else:
                 args.append(dir_to_set(t))
             t = tt.pop(0)
     except IndexError:
-        raise ParseError(f"possibly missing closing parentheses - last value was {t}")
+        raise ParseError(f"possibly missing closing parentheses - last value was '{t}'")
 
     if len(args) != execdir[op][1]:
         raise ParseError(f"too many or few arguments for operation '{op}' - expected {execdir[op][1]} got {len(args)}")
