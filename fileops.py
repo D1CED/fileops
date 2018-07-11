@@ -9,7 +9,7 @@ import os.path as path
 s_open = "("
 s_close = ")"
 
-argp = argparse.ArgumentParser(epilog="""
+help = """
 Directory names may not contain '$', '(', ')' or start with a number.
 All filenames are passed as strings. Relative filenames are allowed.
 An S-expression is build by "(" + <operation> + <...arguments> + ")",
@@ -26,19 +26,11 @@ The following set operations are defined and their shorhands:
     if conditional       - (if (<bool>) (<exp>) (<exp>)) -> <exp>
 
     contains             - (in <set> <set>) -> <bool>
-    disjoint             - (d <set> <set>) -> <bool>
+    disjoint             - (d <set> <set>)  -> <bool>
     equals               - (eq <num> <num>) -> <bool>
     less                 - (lt <num> <num>) -> <bool>
     greater              - (gt <num> <num>) -> <bool>
-""", allow_abbrev=False, formatter_class=argparse.RawDescriptionHelpFormatter)
-argp.add_argument("S-exp", type=str, help="Lisp-like S-expression for set operations.")
-argp.add_argument("-f", default=False, dest="force", action='store_true', help="Don't ask for override.")
-argp.add_argument("-o", type=str, dest="outdir", help="If the expression result is a set copy files to <o> directory. (default print to std.out)")
-argp.add_argument('indirs', nargs='*', help="files refernced form sexp with $<n>")
-for (k, v) in vars(argp.parse_args()).items():
-    if k == "S-exp":
-        k = "sexp"
-    globals()[k] = v
+"""
 
 execdir = {
     "u": (frozenset.union, 2),
@@ -82,9 +74,10 @@ def next_paren(tt) -> int:
             o -= 1
         if o == 0:
             break
-    return idx
+    return idx+1
 
 def dir_to_set(dir_):
+    """returns a set of all filenames of a directory"""
     if path.isfile(path.realpath(dir_)):
         return set(dir_)
     dir_ = path.realpath(dir_)
@@ -92,11 +85,11 @@ def dir_to_set(dir_):
         dir_ += "/"
     return frozenset([x for x in os.listdir(dir_) if path.isfile(dir_ + x)])
 
-
 class ParseError(ValueError):
     pass
 
 def parse(l):
+    """returns the result of a given S-expression"""
     if isinstance(l, str):
         tt = [t for t in tokenize(l)]
     else:
@@ -116,12 +109,12 @@ def parse(l):
     for _ in range(execdir[op][1]): # number of args
         t = tt.pop(0)
         if t == s_open:
-            args.append(parse(["("]+tt[:next_paren(tt)+1]))
-            for _ in range(next_paren(tt)+1):
+            args.append(parse(["("]+tt[:next_paren(tt)]))
+            for _ in range(next_paren(tt)):
                 tt.pop(0)
         elif t[0] == "$":
             args.append(dir_to_set(indirs[int(t[1:])-1]))
-        elif t[0] in [x for x in [str(x) for x in range(1, 10)]]:
+        elif t[0] in [str(x) for x in range(1, 10)]:
             i = int(t)
             if op in ["lt", "eq", "gt"]:
                 args.append(i)
@@ -140,15 +133,28 @@ def parse(l):
     # print(op, args, execdir[op][0](*args))
     return execdir[op][0](*args)
 
-res = parse(sexp)
-if outdir and isinstance(res, frozenset):
-    try:
-        os.mkdir(outdir)
-        [copyfile(x, outdir+x) for x in res]
-    except FileExistsError:
-        if not force:
-            in_ = input("directory already present still proceed? [y/N]: ")
-            if in_ != "y":
-                sys.exit(2)
-else:
-    print(res)
+def main():
+    """parses flags and prints result of the provided S-expression"""
+    argp = argparse.ArgumentParser(epilog=help, allow_abbrev=False, formatter_class=argparse.RawDescriptionHelpFormatter)
+    argp.add_argument("S-exp", type=str, help="Lisp-like S-expression for set operations.")
+    argp.add_argument("-f", default=False, dest="force", action='store_true', help="Don't ask for override.")
+    argp.add_argument("-o", type=str, dest="outdir", help="If the expression result is a set copy files to <o> directory. (default print to std.out)")
+    argp.add_argument('indirs', nargs='*', help="files refernced form sexp with $<n>")
+    for (k, v) in vars(argp.parse_args()).items():
+        globals()[k] = v
+
+    res = parse(globals()["S-exp"])
+    if outdir and isinstance(res, frozenset):
+        try:
+            raise NotImplementedError()
+            os.mkdir(outdir)
+            [copyfile(x, outdir+x) for x in res]
+        except FileExistsError:
+            if not force:
+                in_ = input("directory already present still proceed? [y/N]: ")
+                if in_ != "y":
+                    sys.exit(2)
+    else:
+        print(res)
+
+if __name__ == '__main__': main()
