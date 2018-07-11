@@ -78,7 +78,7 @@ def next_paren(tt) -> int:
             break
     return idx+1
 
-def dir_to_set(dir_):
+def dir_to_set(dir_) -> frozenset:
     """returns a set of all filenames of a directory"""
     if isinstance(dir_, frozenset):
         return dir_
@@ -96,51 +96,51 @@ class ParseError(ValueError):
 def parse(l):
     """returns the result of a given S-expression"""
     if isinstance(l, str):
-        tt = [t for t in tokenize(l)]
-    else:
-        tt = list(l)
+        tt = list(tokenize(l))
     if tt == [s_open, s_close]:
         return
 
-    cur = tt.pop(0)
-    if cur != s_open:
-        raise ParseError(f"expected \"(\", got {cur}")
-
-    op = tt.pop(0)
-    if op not in execdir:
-        raise ParseError(f"expected operation, got {op}")
-
-    args = []
-    # parse till s_close and count args for better debug
-    for _ in range(execdir[op][1]): # number of args
-        t = tt.pop(0)
-        if t == s_open:
-            args.append(parse(["("]+tt[:next_paren(tt)]))
-            for _ in range(next_paren(tt)):
-                tt.pop(0)
-        elif t[0] == "$":
-            try:
-                args.append(dir_to_set(indirs[int(t[1:])-1]))
-            except IndexError:
-                raise ParseError(f"file {int(t[1:])} not specified")
-        elif t[0] in (str(x) for x in range(1, 10)):
-            i = int(t)
-            if op in ["lt", "eq", "gt"]:
-                args.append(i)
-            else:
-                raise ParseError(f"num literal outside context {op}")
-        elif t[0] == s_close:
-            raise ParseError("expected value got ')', to few arguments")
-        else:
-            args.append(dir_to_set(t))
-
     try:
-        if tt.pop(0) != s_close:
-            raise ParseError("no closing parenthese or to many arguments")
+        cur = tt.pop(0)
+        if cur != s_open:
+            raise ParseError(f"expected \"(\", got {cur}")
+
+        op = tt.pop(0)
+        if op not in execdir:
+            raise ParseError(f"expected operation, got {op}")
+
+        args = []
+        t = tt.pop(0)
+        while t != s_close: # number of args
+            if t == s_open:
+                args.append(parse(["("]+tt[:next_paren(tt)]))
+                for _ in range(next_paren(tt)):
+                    tt.pop(0)
+            elif t[0] == "$":
+                try:
+                    args.append(dir_to_set(indirs[int(t[1:])-1]))
+                except IndexError:
+                    raise ParseError(f"file {int(t[1:])} not specified")
+                except ValueError:
+                    raise ParseError(f"error converting {t} to int")
+            elif t[0] in (str(x) for x in range(1, 10)):
+                i = int(t)
+                if op in ["lt", "eq", "gt"]:
+                    args.append(i)
+                else:
+                    raise ParseError(f"num literal outside context {op}")
+            elif t[0] == s_close:
+                raise ParseError("expected value got ')', to few arguments")
+            else:
+                args.append(dir_to_set(t))
+            t = tt.pop(0)
     except IndexError:
-        raise ParseError("no closing parenthese")
+        raise ParseError(f"possibly missing closing parentheses - last value was {t}")
+
+    if len(args) != execdir[op][1]:
+        raise ParseError(f"too many or few arguments for operation '{op}' - expected {execdir[op][1]} got {len(args)}")
     if len(tt) != 0:
-        raise ParseError("to many arguments or parenthese")
+        raise ParseError("too many closing parentheses")
 
     # print(op, args, execdir[op][0](*args))
     return execdir[op][0](*args)
@@ -157,7 +157,7 @@ def main():
 
     try:
         res = parse(globals()["S-exp"])
-    except (ParseError, IndexError, ValueError, TypeError) as e:
+    except ParseError as e:
         print("error while parsing S-expression:", e)
         sys.exit(1)
     if outdir and isinstance(res, frozenset):
