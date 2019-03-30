@@ -9,9 +9,11 @@ from contextlib import suppress
 
 s_open = "("
 s_close = ")"
-alldirs = dict()
 
-help = """
+alldirs = {}
+indirs = []
+
+help_text = """
 Directory names may not contain '$', '(', ')', ' ' or start with a number.
 All filenames are passed as strings. Relative filenames are allowed.
 An S-expression is build by "(" + <operation> + <...arguments> + ")",
@@ -36,23 +38,24 @@ The following set operations are defined and their shorhands:
 
 execdir = {
     # adding new operations is trivial
+    # n-length argument support?
     "u":  (frozenset.union, 2),
     "n":  (frozenset.intersection, 2),
     "\\": (frozenset.difference, 2),
     "s":  (frozenset.symmetric_difference, 2),
-    "#":  (lambda a: len(a), 1),
-    "in": (lambda a, b: a.issubset(b), 2),
-    "d":  (lambda a, b: a.isdisjoint(b), 2),
+    "in": (frozenset.issubset, 2),
+    "d":  (frozenset.isdisjoint, 2),
+    "#":  (len, 1),
     "eq": (lambda a, b: a == b, 2),
     "lt": (lambda a, b: a < b, 2),
     "gt": (lambda a, b: a > b, 2),
     "if": (lambda a, b, c: b if a else c, 3),
 }
 
+
 def tokenize(s):
     """function tokenize is an iterator over tokens of an s-expression"""
-    s = s.split()
-    for val in s:
+    for val in s.split():
         last = 0
         while val[0] == s_open:
             val = val[1:]
@@ -65,7 +68,7 @@ def tokenize(s):
             yield val
         for _ in range(last):
             yield s_close
-    return
+
 
 def next_paren(tt) -> int:
     """function next_paren returns the index of the next top level element of a tokinize range"""
@@ -79,6 +82,7 @@ def next_paren(tt) -> int:
             break
     return idx+1
 
+
 def dir_to_set(dir_) -> frozenset:
     """returns a set of all filenames of a directory"""
     if path.isfile(path.realpath(dir_)):
@@ -86,11 +90,15 @@ def dir_to_set(dir_) -> frozenset:
     dir_ = path.realpath(dir_)
     if dir_[-1] != "/":
         dir_ += "/"
-    alldirs.update((x, dir_+x) for x in os.listdir(dir_) if path.isfile(dir_ + x))
+    alldirs.update((x, dir_+x)
+                   for x in os.listdir(dir_)
+                   if path.isfile(dir_ + x))
     return frozenset(x for x in os.listdir(dir_) if path.isfile(dir_ + x))
+
 
 class ParseError(ValueError):
     pass
+
 
 def parse(l):
     """returns the result of a given S-expression"""
@@ -99,7 +107,7 @@ def parse(l):
     else:
         tt = list(l)
     if tt == [s_open, s_close]:
-        return
+        return None
 
     try:
         cur = tt.pop(0)
@@ -112,7 +120,7 @@ def parse(l):
 
         args = []
         t = tt.pop(0)
-        while t != s_close: # number of args
+        while t != s_close:  # number of args
             if t == s_open:
                 args.append(parse(["("]+tt[:next_paren(tt)]))
                 for _ in range(next_paren(tt)):
@@ -136,34 +144,49 @@ def parse(l):
                 args.append(dir_to_set(t))
             t = tt.pop(0)
     except IndexError:
-        raise ParseError(f"possibly missing closing parentheses - last value was '{t}'")
+        raise ParseError(
+            f"possibly missing closing parentheses - last value was '{t}'")
 
     if len(args) != execdir[op][1]:
-        raise ParseError(f"too many or few arguments for operation '{op}' - expected {execdir[op][1]} got {len(args)}")
+        raise ParseError(
+            f"too many or few arguments for operation '{op}' - expected {execdir[op][1]} got {len(args)}")
     if len(tt) != 0:
         raise ParseError("too many closing parentheses")
 
     # print(op, args, execdir[op][0](*args))
     return execdir[op][0](*args)
 
+
 def main():
     """parses flags and prints result of the provided S-expression"""
-    argp = argparse.ArgumentParser(epilog=help, allow_abbrev=False, formatter_class=argparse.RawDescriptionHelpFormatter)
-    argp.add_argument("S-exp", type=str, help="Lisp-like S-expression for set operations.")
-    argp.add_argument("-f", default=False, dest="force", action='store_true', help="Don't ask for override.")
-    argp.add_argument("-o", type=str, dest="outdir", help="If the expression result is a set copy files to <o> directory. (default print to std.out)")
-    argp.add_argument('indirs', nargs='*', help="files refernced form sexp with $<n>")
-    for (k, v) in vars(argp.parse_args()).items():
-        globals()[k] = v
+    argp = argparse.ArgumentParser(epilog=help_text, allow_abbrev=False,
+                                   formatter_class=argparse.RawDescriptionHelpFormatter)
+
+    argp.add_argument("S-exp", type=str,
+                      help="Lisp-like S-expression for set operations.")
+    argp.add_argument("-f", default=False, dest="force", action='store_true',
+                      help="Don't ask for override.")
+    argp.add_argument("-o", type=str, dest="outdir",
+                      help="If the expression result is a set copy files to <o> directory. (default print to std.out)")
+    argp.add_argument('indirs', nargs='*',
+                      help="files refernced form sexp with $<n>")
+
+    args = vars(argp.parse_args())
+
+    global indirs
+    indirs = args['indirs']
+    outdir = args['outdir']
 
     try:
-        res = parse(globals()["S-exp"])
+        res = parse(args["S-exp"])
     except ParseError as e:
         print("error while parsing S-expression:", e)
         sys.exit(1)
+
     if outdir and isinstance(res, frozenset):
         if force:
-            with suppress(FileExistsError): os.mkdir(outdir)
+            with suppress(FileExistsError):
+                os.mkdir(outdir)
         else:
             try:
                 os.mkdir(outdir)
@@ -176,4 +199,6 @@ def main():
     else:
         print(res)
 
-if __name__ == '__main__': main()
+
+if __name__ == '__main__':
+    main()

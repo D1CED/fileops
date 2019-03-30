@@ -1,43 +1,49 @@
-import unittest
+from unittest import TestCase, main
 import fileops
 
 
-class TestFileops(unittest.TestCase):
+class TestFileops(TestCase):
 
-    def test_lexer_min(self):
-        want = ['(', ')']
-        self.assertEqual(list(fileops.tokenize("()")), want)
-
-    def test_lexer_std(self):
-        data = "(if (eq (# ../.) 14) () (u $1 /home/jannis/Music/))"
-        want = ['(', 'if', '(', 'eq', '(', '#', '../.', ')', '14', ')',
-        '(', ')', '(', 'u', '$1', '/home/jannis/Music/', ')', ')' ]
-        self.assertEqual(list(fileops.tokenize(data)), want)
-
-    def test_lexer_hard(self):
-        data = "(((((sdagsadg (&ad, (381)) fasdf)) ()"
-        want = ['(', '(', '(', '(', '(', 'sdagsadg', '(', '&ad,', '(',
-            '381', ')', ')', 'fasdf', ')', ')', '(', ')']
-        self.assertEqual(list(fileops.tokenize(data)), want)
+    def test_lexer(self):
+        testdict = {
+            'min': ("()", ['(', ')']),
+            'std': (
+                "(if (eq (# ../.) 14) () (u $1 /home/jannis/Music/))",
+                ['(', 'if', '(', 'eq', '(', '#', '../.', ')', '14', ')',
+                 '(', ')', '(', 'u', '$1', '/home/jannis/Music/', ')', ')']
+            ),
+            'hard': (
+                "(((((sdagsadg (&ad, (381)) fasdf)) ()",
+                ['(', '(', '(', '(', '(', 'sdagsadg', '(', '&ad,', '(',
+                 '381', ')', ')', 'fasdf', ')', ')', '(', ')']
+            ),
+        }
+        for name, (inp, want) in testdict.items():
+            with self.subTest(name=name, inp=inp, want=want):
+                self.assertEqual(list(fileops.tokenize(inp)), want)
 
     def test_next_paren(self):
         data = "eq (# ../.) 1) () (u $1 /home/jannis/Music/))"
         self.assertEqual(fileops.next_paren(data), 14)
 
-    def test_parse_min(self):
-        self.assertEqual(fileops.parse("()"), None)
-        self.assertEqual(fileops.parse("(eq 14 20)"), False)
-        self.assertEqual(fileops.parse("(eq 3 3)"), True)
-
-    def test_parse_std(self):
+    def test_parser(self):
         fileops.indirs = ['.']
-        self.assertEqual(fileops.parse("(# .)"), 2)
-        self.assertEqual(fileops.parse("(# $1)"), 2)
-        self.assertEqual(fileops.parse("(u . .)"), frozenset(['fileops.py', 'test_fileops.py']))
-        self.assertEqual(fileops.parse("(d . .)"), False)
-        self.assertEqual(fileops.parse("(in . .)"), True)
-        self.assertEqual(fileops.parse("(if (in . .) (eq 2 (# $1)) ())"), True)
-        self.assertEqual(fileops.parse("(if (lt 14 2) (eq 2 (# $1)) ())"), None)
+        tests = [
+            ("()", None),
+            ("(eq 14 20)", False),
+            ("(eq 3 3)", True),
+            ("(# .)", 2),
+            ("(# $1)", 2),
+            ("(u . .)", {'fileops.py', 'test_fileops.py'}),
+            ("(d . .)", False),
+            ("(in . .)", True),
+            ("(if (in . .) (eq 2 (# $1)) ())", True),
+            ("(if (lt 14 2) (eq 2 (# $1)) ())", None),
+        ]
+        for inp, want in tests:
+            with self.subTest(inp=inp, want=want):
+                self.assertEqual(fileops.parse(inp), want)
+
 
 if __name__ == '__main__':
-    unittest.main()
+    main()
