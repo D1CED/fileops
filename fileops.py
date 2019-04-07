@@ -1,17 +1,24 @@
 #!/usr/bin/python
-"""Module fileops is a cli tool for set operations on files"""
-import os
-import sys
+
+"""
+Module fileops is a cli tool for set operations on files.
+"""
+
 import argparse
+import operator
+import os
 import os.path as path
-from shutil import copyfile
+import sys
 from contextlib import suppress
+from itertools import chain, takewhile
+from shutil import copyfile
 
-s_open = "("
-s_close = ")"
 
-alldirs = {}
-indirs = []
+S_OPEN = "("
+S_CLOSE = ")"
+
+_alldirs = {}
+_indirs = []
 
 help_text = """
 Directory names may not contain '$', '(', ')', ' ' or start with a number.
@@ -46,53 +53,76 @@ execdir = {
     "in": (frozenset.issubset, 2),
     "d":  (frozenset.isdisjoint, 2),
     "#":  (len, 1),
-    "eq": (lambda a, b: a == b, 2),
-    "lt": (lambda a, b: a < b, 2),
-    "gt": (lambda a, b: a > b, 2),
+    "eq": (operator.eq, 2),
+    "lt": (operator.lt, 2),
+    "gt": (operator.gt, 2),
     "if": (lambda a, b, c: b if a else c, 3),
 }
 
+accept_number = ["lt", "eq", "gt"]
+
 
 def tokenize(s):
-    """function tokenize is an iterator over tokens of an s-expression"""
+    """generator tokenize is an iterator over tokens of an s-expression"""
     for val in s.split():
         last = 0
-        while val[0] == s_open:
+        while val[0] == S_OPEN:
             val = val[1:]
-            yield s_open
+            yield S_OPEN
         for char in reversed(val):
-            if char == s_close:
+            if char == S_CLOSE:
                 val = val[:-1]
                 last += 1
         if val != "":
             yield val
         for _ in range(last):
-            yield s_close
+            yield S_CLOSE
 
 
-def next_paren(tt) -> int:
-    """function next_paren returns the index of the next top level element of a tokinize range"""
-    o, idx = 1, 0
-    for idx, s in enumerate(tt):
-        if s == s_open:
-            o += 1
-        if s == s_close:
-            o -= 1
-        if o == 0:
+def next_paren(tokens) -> int:
+    """function next_paren returns the index of the next top level element
+    of a tokenize range"""
+    depth, idx = 1, 0
+    for idx, token in enumerate(tokens):
+        if token == S_OPEN:
+            depth += 1
+        if token == S_CLOSE:
+            depth -= 1
+        if depth == 0:
             break
     return idx+1
+
+
+def next_paren_it():
+    depth = 0
+
+    def inner(token):
+        nonlocal depth
+
+        if token == S_OPEN:
+            depth += 1
+        elif token == S_CLOSE:
+            depth -= 1
+
+        return depth != 0
+
+    return inner
+
+
+def takeinner(tokens):
+    return chain(takewhile(next_paren_it(), chain([S_OPEN], tokens)), [S_CLOSE])
 
 
 def dir_to_set(dir_) -> frozenset:
     """returns a set of all filenames of a directory"""
     if path.isfile(path.realpath(dir_)):
-        return set(dir_)
+        return frozenset(dir_)
     dir_ = path.realpath(dir_)
     if dir_[-1] != "/":
         dir_ += "/"
-    alldirs.update((x, dir_+x)
-                   for x in os.listdir(dir_)
-                   if path.isfile(dir_ + x))
+    _alldirs.update((x, dir_+x)
+                    for x in os.listdir(dir_)
+                    if path.isfile(dir_ + x))
     return frozenset(x for x in os.listdir(dir_) if path.isfile(dir_ + x))
 
 
@@ -102,56 +132,59 @@ class ParseError(ValueError):
 
 def parse(l):
     """returns the result of a given S-expression"""
-    if isinstance(l, str):
-        tt = list(tokenize(l))
-    else:
-        tt = list(l)
-    if tt == [s_open, s_close]:
-        return None
+
+    tokens = tokenize(l) if isinstance(l, str) else l
 
     try:
-        cur = tt.pop(0)
-        if cur != s_open:
-            raise ParseError(f"expected \"(\", got '{cur}'")
+        token = next(tokens)
+        if token != S_OPEN:
+            raise ParseError(f"expected '{S_OPEN}', got '{token}'")
 
-        op = tt.pop(0)
-        if op not in execdir:
-            raise ParseError(f"expected operation, got '{op}'")
+        token = next(tokens)
+        if token == S_CLOSE:
+            return None
+        elif token not in execdir:
+            raise ParseError(f"expected operation, got '{token}'")
+        op = token
 
         args = []
-        t = tt.pop(0)
-        while t != s_close:  # number of args
-            if t == s_open:
-                args.append(parse(["("]+tt[:next_paren(tt)]))
-                for _ in range(next_paren(tt)):
-                    tt.pop(0)
-            elif t[0] == "$":
+        token = next(tokens)
+        while token != S_CLOSE:  # number of args
+
+            if token == S_OPEN:
+                args.append(parse(takeinner(tokens)))
+            elif token[0] == "$":
                 try:
-                    args.append(dir_to_set(indirs[int(t[1:])-1]))
+                    args.append(dir_to_set(_indirs[int(token[1:])-1]))
                 except IndexError:
-                    raise ParseError(f"file {int(t[1:])} not specified")
+                    raise ParseError(f"file '{int(token[1:])}' not specified")
                 except ValueError:
-                    raise ParseError(f"error converting '{t}' to int")
-            elif t[0] in (str(x) for x in range(1, 10)):
-                i = int(t)
-                if op in ["lt", "eq", "gt"]:
+                    raise ParseError(f"error converting '{token}' to int")
+            elif token.isdigit():
+                i = int(token)
+                if op in accept_number:
                     args.append(i)
                 else:
                     raise ParseError(f"num literal outside context '{op}'")
-            elif t[0] == s_close:
+            elif token == S_CLOSE:
                 raise ParseError("expected value got ')', to few arguments")
             else:
-                args.append(dir_to_set(t))
-            t = tt.pop(0)
-    except IndexError:
+                args.append(dir_to_set(token))
+
+            token = next(tokens)
+
+    except StopIteration:
         raise ParseError(
-            f"possibly missing closing parentheses - last value was '{t}'")
+            f"possibly missing closing parentheses - last value was '{token}'")
 
     if len(args) != execdir[op][1]:
         raise ParseError(
             f"too many or few arguments for operation '{op}' - expected {execdir[op][1]} got {len(args)}")
-    if len(tt) != 0:
+    try:
+        next(tokens)
         raise ParseError("too many closing parentheses")
+    except StopIteration:
+        pass
 
     # print(op, args, execdir[op][0](*args))
     return execdir[op][0](*args)
@@ -173,14 +206,15 @@ def main():
 
     args = vars(argp.parse_args())
 
-    global indirs
-    indirs = args['indirs']
-    outdir = args['outdir']
+    global _indirs
+    _indirs = args["indirs"]
+    outdir = args["outdir"]
+    force = args["force"]
 
     try:
         res = parse(args["S-exp"])
-    except ParseError as e:
-        print("error while parsing S-expression:", e)
+    except ParseError as pe:
+        print("error while parsing S-expression:", pe)
         sys.exit(1)
 
     if outdir and isinstance(res, frozenset):
@@ -191,14 +225,14 @@ def main():
             try:
                 os.mkdir(outdir)
             except FileExistsError:
-                in_ = input("directory already present still proceed? [y/N]: ")
-                if in_ != "y":
+                inp = input("directory already present still proceed? [y/N]: ")
+                if inp != "y":
                     sys.exit(2)
         for x in res:
-            copyfile(alldirs[x], outdir+x)
+            copyfile(_alldirs[x], outdir+x)
     else:
         print(res)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

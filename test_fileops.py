@@ -26,8 +26,16 @@ class TestFileops(TestCase):
         data = "eq (# ../.) 1) () (u $1 /home/jannis/Music/))"
         self.assertEqual(fileops.next_paren(data), 14)
 
+    def test_next_paren_it(self):
+        from itertools import takewhile, chain
+
+        data = fileops.tokenize("(if (eq 2 (# $12))) abc ) 1")
+        l = list(chain(takewhile(fileops.next_paren_it(), data), ")")) # consume iterator
+        self.assertEqual(l, ["(", "if", "(","eq", "2", "(", "#", "$12", ")", ")", ")"])
+        self.assertEqual(list(data), ["abc", ")", "1"])
+
     def test_parser(self):
-        fileops.indirs = ['.']
+        fileops._indirs = ['.']
         tests = [
             ("()", None),
             ("(eq 14 20)", False),
