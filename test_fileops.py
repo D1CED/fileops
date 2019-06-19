@@ -22,10 +22,6 @@ class TestFileops(TestCase):
             with self.subTest(name=name, inp=inp, want=want):
                 self.assertEqual(list(fileops.tokenize(inp)), want)
 
-    def test_next_paren(self):
-        data = "eq (# ../.) 1) () (u $1 /home/jannis/Music/))"
-        self.assertEqual(fileops.next_paren(data), 14)
-
     def test_next_paren_it(self):
         from itertools import takewhile, chain
 

@@ -79,20 +79,6 @@ def tokenize(s):
             yield S_CLOSE
 
 
-def next_paren(tokens) -> int:
-    """function next_paren returns the index of the next top level element
-    of a tokenize range"""
-    depth, idx = 1, 0
-    for idx, token in enumerate(tokens):
-        if token == S_OPEN:
-            depth += 1
-        if token == S_CLOSE:
-            depth -= 1
-        if depth == 0:
-            break
-    return idx+1
-
-
 def next_paren_it():
     depth = 0
 
@@ -107,10 +93,6 @@ def next_paren_it():
         return depth != 0
 
     return inner
-
-
-def takeinner(tokens):
-    return chain(takewhile(next_paren_it(), chain([S_OPEN], tokens)), [S_CLOSE])
 
 
 def dir_to_set(dir_) -> frozenset:
@@ -152,7 +134,9 @@ def parse(l):
         while token != S_CLOSE:  # number of args
 
             if token == S_OPEN:
-                args.append(parse(takeinner(tokens)))
+                tmp = chain(takewhile(next_paren_it(), chain([S_OPEN], tokens)),
+                            [S_CLOSE])
+                args.append(parse(tmp))
             elif token[0] == "$":
                 try:
                     args.append(dir_to_set(_indirs[int(token[1:])-1]))
